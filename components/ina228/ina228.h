@@ -60,7 +60,7 @@ enum AdcSample : uint8_t {
 #pragma pack(push)
 #pragma pack(1)
 union ConfigurationRegister {
-  uint16_t raw;
+  uint16_t raw_u16;
   struct {
     uint8_t reserved_0_3 : 4;
     bool ADCRANGE;
@@ -72,7 +72,7 @@ union ConfigurationRegister {
 };
 
 union AdcConfigurationRegister {
-  uint16_t raw;
+  uint16_t raw_u16;
   struct {
     AdcSample AVG : 3;
     AdcSpeed VTCT : 3;
@@ -113,6 +113,11 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
   bool read_energy_(double &joules_out);
   bool read_charge_(double &coulombs_out);
   bool clear_energy_counter_();
+
+  bool read_u16_(uint8_t reg, uint16_t &out);
+  bool read_s20_4_(uint8_t reg, int32_t &out);
+  bool write_u16_(uint8_t reg, uint16_t val);
+  
 
   double shunt_resistance_ohm_;
   double max_current_a_;

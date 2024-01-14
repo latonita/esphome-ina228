@@ -14,15 +14,36 @@ static const double DIE_TEMP_LSB = 0.0078125;
 static const double V_SHUNT_LSB_RANGE0 = 0.0003125;
 static const double V_SHUNT_LSB_RANGE1 = 0.000078125;
 
-#define BIT(nr) (1UL << (nr))
+bool INA228Component::read_u16_(uint8_t reg, uint16_t &out) {
+  uint16_t data_in{0};
+  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 2);
+  out = byteswap(data_in);
+  return ret;
+}
+
+bool INA228Component::read_s20_4_(uint8_t reg, int32_t &out) {
+  int32_t data_in{0};
+  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 3);
+
+  bool sign = data_in & 0x80;
+  out = byteswap(data_in & 0xffffff) >> 4;
+  if (sign)
+    out *= -1;
+  return ret;
+}
+
+bool INA228Component::write_u16_(uint8_t reg, uint16_t val) {
+  uint16_t data_out = byteswap(val);
+  auto ret = this->write_bytes(reg, (uint8_t *) &data_out, 2);
+  return ret;
+}
 
 void INA228Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up INA228...");
 
   ConfigurationRegister cfg{0};
   cfg.RST = 1;
-  cfg = byteswap(cfg);
-  auto ret = this->write_bytes(RegisterMap::REG_CONFIG, (uint8_t *) &cfg, 2);
+  auto ret = this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
   if (!ret) {
     ESP_LOGE(TAG, "Reset failed, check comm?");
     this->mark_failed();
@@ -31,8 +52,8 @@ void INA228Component::setup() {
   delay(1);
 
   uint16_t manufacturer_id = 0, dev_id = 0;
-  ret = ret && this->read_bytes(RegisterMap::REG_MANUFACTURER_ID, (uint8_t *) &manufacturer_id, 2);
-  ret = ret && this->read_bytes(RegisterMap::REG_DEVICE_ID, (uint8_t *) &dev_id, 2);
+  ret = ret && this->read_u16_(RegisterMap::REG_MANUFACTURER_ID, manufacturer_id);
+  ret = ret && this->read_u16_(RegisterMap::REG_DEVICE_ID, dev_id);
   if (ret) {
     ESP_LOGE(TAG, "ID read failed");
     this->mark_failed();
@@ -42,14 +63,13 @@ void INA228Component::setup() {
   delay(1);
 
   this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
+  delay(2);
 
   AdcConfigurationRegister adc_cfg{0};
-  ret = this->read_bytes((uint8_t) RegisterMap::REG_ADC_CONFIG, (uint8_t *) &adc_cfg.raw, 2);
-  adc_cfg.raw = byteswap(adc_cfg.raw);
+  ret = this->read_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
   adc_cfg.MODE = 0x0f;  // Fh = Continuous bus voltage, shunt voltage and temperature
-
-  adc_cfg.raw = byteswap(adc_cfg.raw);
-  ret = ret && this->write_bytes((uint8_t) RegisterMap::REG_ADC_CONFIG, (uint8_t *) &adc_cfg.raw, 2);
+  ret = ret && this->write_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
+  delay(2);
 }
 
 bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
@@ -59,68 +79,49 @@ bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
   ESP_LOGI(TAG, "New Rshunt=%f ohm, max current=%.3f", r_shunt, max_current);
   ESP_LOGI(TAG, "New CURRENT_LSB=%f, SHUNT_CAL=%u", this->current_lsb_, this->shunt_cal_);
 
-  return this->write_bytes((uint8_t) RegisterMap::REG_SHUNT_CAL, (uint8_t *) &this->shunt_cal_, 2);
+  return this->write_u16_(RegisterMap::REG_SHUNT_CAL, this->shunt_cal_);
 }
 
 bool INA228Component::set_adc_range_(bool adc_range) {
   ConfigurationRegister cfg{0};
-  //  auto ret = this->read_byte_16((uint8_t) RegisterMap::REG_CONFIG, &cfg);
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_CONFIG, (uint8_t *) &cfg.raw, 2);
-  cfg.raw = byteswap(cfg.raw);
+  auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
   cfg.ADCRANGE = adc_range;
-
-  cfg.raw = byteswap(cfg.raw);
-  ret = ret && this->write_bytes((uint8_t) RegisterMap::REG_CONFIG, (uint8_t *) &cfg.raw, 2);
+  ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
 
   this->adc_range_ = adc_range;
-  return ret;
-}
-
-bool INA228Component::read_voltage_(double &volt_out) {
-  int32_t volt_reading = 0;
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_VBUS, (uint8_t *) &volt_reading, 3);
-
-  bool sign = volt_reading & 0x80;
-  volt_reading = byteswap(volt_reading & 0xffffff) >> 4;
-  if (sign)
-    volt_reading *= -1;
-
-  volt_out = (volt_reading) *VBUS_LSB;
-
-  return ret;
-}
-
-bool INA228Component::read_current_(double &amps_out) {
-  int32_t amps_reading = 0;
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_VBUS, (uint8_t *) &amps_reading, 3);
-
-  bool sign = amps_reading & 0x80;
-  amps_reading = byteswap(amps_reading & 0xffffff) >> 4;
-  if (sign)
-    amps_reading *= -1;
-  amps_out = (amps_reading) * this->current_lsb_;
-
-  return ret;
-}
-
-bool INA228Component::read_die_temp_(double &temp) {
-  uint16_t temp_reading = 0;
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_DIETEMP, (uint8_t *) &temp_reading, 2);
-  temp_reading = byteswap(temp_reading);
-  temp = (double) temp_reading * DIE_TEMP_LSB;
 
   return ret;
 }
 
 bool INA228Component::read_volt_shunt_(double &volt_out) {
   int32_t volt_reading = 0;
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &volt_reading, 3);
-
-  bool sign = volt_reading & 0x80;
-  volt_reading = byteswap(volt_reading & 0xffffff) >> 4;
-  if (sign)
-    volt_reading *= -1;
+  auto ret = this->read_s20_4_(RegisterMap::REG_VSHUNT, volt_reading);
   volt_out = (volt_reading) * (this->adc_range_ ? V_SHUNT_LSB_RANGE1 : V_SHUNT_LSB_RANGE0);
+
+  return ret;
+}
+
+bool INA228Component::read_voltage_(double &volt_out) {
+  int32_t volt_reading = 0;
+  auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, volt_reading);
+  volt_out = (volt_reading) *VBUS_LSB;
+
+  return ret;
+}
+
+bool INA228Component::read_die_temp_(double &temp) {
+  uint16_t temp_reading = 0;
+  auto ret = this->read_u16_(RegisterMap::REG_DIETEMP, temp_reading);
+  temp_reading = byteswap(temp_reading);
+  temp = (double) temp_reading * DIE_TEMP_LSB;
+
+  return ret;
+}
+
+bool INA228Component::read_current_(double &amps_out) {
+  int32_t amps_reading = 0;
+  auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, amps_reading);
+  amps_out = (amps_reading) * this->current_lsb_;
 
   return ret;
 }
@@ -157,99 +158,11 @@ bool INA228Component::read_charge_(double &coulombs_out) {
 
 bool INA228Component::clear_energy_counter_() {
   ConfigurationRegister cfg{0};
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_CONFIG, (uint8_t *) &cfg.raw, 2);
-  cfg = byteswap(cfg);
-
-  cfg.RSTACC = true;  // BIT(14);  // CONFIG->RSTACC
-  cfg = byteswap(cfg);
-  ret = ret && this->write_bytes((uint8_t) RegisterMap::REG_CONFIG, (uint8_t *) &cfg, 2);
-
+  auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
+  cfg.RSTACC = true;
+  ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
   return ret;
 }
-
-// bool  INA228Component::read_alert_flag(uint16_t *flag_out)
-// {
-//     if (flag_out == nullptr) {
-//         return ESP_ERR_INVALID_ARG;
-//     }
-
-//     uint16_t buf = 0;
-//     auto ret = read_u16((uint8_t)RegisterMap::REG_DIAG_ALRT, &buf);
-//     if (ret != ESP_OK) {
-//         return ret;
-//     }
-
-//     *flag_out = buf;
-//     return ret;
-// }
-
-// bool  INA228Component::write_alert_flag(uint16_t flag)
-// {
-//     return write_u16((uint8_t)RegisterMap::REG_DIAG_ALRT, flag);
-// }
-
-/*
-
-bool  INA228Component::write(uint8_t cmd, const uint8_t *buf, size_t len)
-{
-    i2c_cmd_handle_t handle = i2c_cmd_link_create_static(trans_buf, TRANS_SIZE);
-    auto ret = i2c_master_start(handle);
-    ret = ret ?: i2c_master_write_byte(handle, (addr_msb | I2C_MASTER_WRITE), true);
-    ret = ret ?: i2c_master_write_byte(handle, cmd, true);
-    ret = ret ?: i2c_master_write(handle, buf, len, true);
-    ret = ret ?: i2c_master_stop(handle);
-
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to prepare transaction: 0x%x", ret);
-        return ret;
-    }
-
-    ret = i2c_master_cmd_begin(i2c_port, handle, wait_ticks);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send: 0x%x", ret);
-        return ret;
-    }
-
-    return ESP_OK;
-}
-
-
-
-bool  INA228Component::write_u8(uint8_t cmd, uint8_t data)
-{
-    return write(cmd, (uint8_t *)&data, sizeof(data), wait_ticks);
-}
-
-bool  INA228Component::write_u16(uint8_t cmd, uint16_t data)
-{
-    uint16_t data_send = __bswap16(data);
-    return write(cmd, (uint8_t *)&data_send, sizeof(data_send), wait_ticks);
-}
-
-
-bool  INA228Component::read_u8(uint8_t cmd, uint8_t *out)
-{
-    return read(cmd, out, sizeof(uint8_t), wait_ticks);
-}
-
-bool  INA228Component::read_u16(uint8_t cmd, uint16_t *out)
-{
-    if (out == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    uint16_t data_out = 0;
-    auto ret = read(cmd, (uint8_t *)&data_out, sizeof(data_out), wait_ticks);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    *out = __bswap16(data_out);
-    return ESP_OK;
-}
-
-
-*/
 
 void INA228Component::dump_config() {
   ESP_LOGCONFIG(TAG, "INA228:");
