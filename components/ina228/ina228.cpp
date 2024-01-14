@@ -44,7 +44,7 @@ void INA228Component::setup() {
   this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
 
   AdcConfigurationRegister adc_cfg{0};
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_ADC_CONFIG, (uint8_t *) &adc_cfg.raw, 2);
+  ret = this->read_bytes((uint8_t) RegisterMap::REG_ADC_CONFIG, (uint8_t *) &adc_cfg.raw, 2);
   adc_cfg.raw = byteswap(adc_cfg.raw);
   adc_cfg.MODE = 0x0f;  // Fh = Continuous bus voltage, shunt voltage and temperature
 
