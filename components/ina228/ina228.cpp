@@ -19,7 +19,6 @@ static const double V_SHUNT_LSB_RANGE1 = 0.000078125;
 void INA228Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up INA228...");
 
-  this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
   ConfigurationRegister cfg{0};
   cfg.RST = 1;
   cfg = byteswap(cfg);
@@ -41,6 +40,16 @@ void INA228Component::setup() {
   }
   ESP_LOGI(TAG, "Manufacturer: 0x%04X, Device ID: 0x%04X", manufacturer_id, dev_id);
   delay(1);
+
+  this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
+
+  AdcConfigurationRegister adc_cfg{0};
+  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_ADC_CONFIG, (uint8_t *) &adc_cfg.raw, 2);
+  adc_cfg.raw = byteswap(adc_cfg.raw);
+  adc_cfg.MODE = 0x0f;  // Fh = Continuous bus voltage, shunt voltage and temperature
+
+  adc_cfg.raw = byteswap(adc_cfg.raw);
+  ret = ret && this->write_bytes((uint8_t) RegisterMap::REG_ADC_CONFIG, (uint8_t *) &adc_cfg.raw, 2);
 }
 
 bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
