@@ -33,6 +33,7 @@ bool INA228Component::read_s20_4_(uint8_t reg, int32_t &out) {
   data_in = byteswap(data_in & 0xFFFFFF) >> 12;
   if (sign)
     data_in += 0xFFF00000;
+  out = data_in;
   return ret == i2c::ERROR_OK;
 }
 
@@ -229,6 +230,15 @@ void INA228Component::update() {
       this->status_set_warning();
     }
     this->bus_voltage_sensor_->publish_state(bus_voltage);
+  }
+
+  if (this->die_temperature_sensor_ != nullptr) {
+    double temp;
+    if (!this->read_die_temp_(temp)) {
+      all_okay = false;
+      this->status_set_warning();
+    }
+    this->die_temperature_sensor_->publish_state(temp);
   }
 
   if (this->current_sensor_ != nullptr) {
