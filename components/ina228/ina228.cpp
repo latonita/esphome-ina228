@@ -27,7 +27,6 @@ bool INA228Component::read_s20_4_(uint8_t reg, int32_t &out) {
   // Two's complement value. Highest bit is the sign
   int32_t data_in{0};
   auto ret = this->read_register(reg, (uint8_t *) &data_in, 3, false);
-  //  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 3, );
   ESP_LOGD(TAG, "read_s20_4_ 0x%02X, ret= %d, raw 0x%08X", reg, ret, data_in);
 
   bool sign = data_in & 0x80;
@@ -39,8 +38,7 @@ bool INA228Component::read_s20_4_(uint8_t reg, int32_t &out) {
 
 bool INA228Component::write_u16_(uint8_t reg, uint16_t val) {
   uint16_t data_out = byteswap(val);
-  auto ret = this->write_register(reg, (uint8_t *) &data_out, 2, false);
-  //  auto ret = this->write_bytes(reg, (uint8_t *) &data_out, 2);
+  auto ret = this->write_register(reg, (uint8_t *) &data_out, 2);
   if (ret != i2c::ERROR_OK) {
     ESP_LOGD(TAG, "write_u16 failed ret=%d, reg=0x%02X, val=0x%04X", ret, reg, val);
   }
@@ -60,19 +58,17 @@ void INA228Component::setup() {
   }
   delay(1);
 
-  uint16_t manufacturer_id = 0, dev_id = 0;
-  ret = this->read_u16_(RegisterMap::REG_MANUFACTURER_ID, manufacturer_id);
-  ESP_LOGD(TAG, "Read mfg id returned %s", TRUEFALSE(ret));
-
-  ret = this->read_u16_(RegisterMap::REG_DEVICE_ID, dev_id);
-  ESP_LOGD(TAG, "Read mfg id returned %s", TRUEFALSE(ret));
-  // if (ret) {
-  //   ESP_LOGE(TAG, "ID read failed");
-  //   this->mark_failed();
-  //   return;
-  // }
-  ESP_LOGD(TAG, "Manufacturer: 0x%04X, Device ID: 0x%04X", manufacturer_id, dev_id);
+  uint16_t manufacturer_id{0}, dev_id{0}, rev_id{0};
+  this->read_u16_(RegisterMap::REG_MANUFACTURER_ID, manufacturer_id);
+  this->read_u16_(RegisterMap::REG_DEVICE_ID, dev_id);
+  rev_id = dev_id & 0x0F;
+  dev_id >>= 4;
+  ESP_LOGD(TAG, "Manufacturer: 0x%04X, Device ID: 0x%04X, Revision: %d", manufacturer_id, dev_id, rev_id);
   delay(1);
+
+  if (manufacturer_id != 0x5449 || dev_id != 0x228) {
+    ESP_LOGW(TAG, "Manufacturer and device IDs do not match 0x5449 and 0x228.");
+  }
 
   this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
   delay(2);
@@ -102,9 +98,10 @@ bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
 bool INA228Component::set_adc_range_(bool adc_range) {
   ConfigurationRegister cfg{0};
   auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
+  ESP_LOGD(TAG, "set_adc_range_ is %s, read: 0x%04X", TRUEFALSE(ret), cfg.raw_u16);
   cfg.ADCRANGE = adc_range;
   ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-
+  ESP_LOGD(TAG, "set_adc_range_ is %s, write: 0x%04X", TRUEFALSE(ret), cfg.raw_u16);
   this->adc_range_ = adc_range;
 
   return ret;
@@ -148,7 +145,7 @@ bool INA228Component::read_current_(double &amps_out) {
 
 bool INA228Component::read_power_(double &power_out) {
   uint32_t power_reading = 0;
-  auto ret = this->read_register((uint8_t) RegisterMap::REG_POWER, (uint8_t *) &power_reading, 3, false);
+  auto ret = this->read_register((uint8_t) RegisterMap::REG_POWER, (uint8_t *) &power_reading, 3);
   ESP_LOGD(TAG, "read_power_1 ret= %d, 0x%08X", ret, power_reading);
 
   power_reading = byteswap(power_reading & 0xffffff) >> 8;
@@ -160,7 +157,7 @@ bool INA228Component::read_power_(double &power_out) {
 
 bool INA228Component::read_energy_(double &joules_out) {
   uint64_t joules_reading = 0;  // Only 40 bits used
-  auto ret = this->read_register((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &joules_reading, 5, false);
+  auto ret = this->read_register((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &joules_reading, 5);
   ESP_LOGD(TAG, "read_energy_1 ret= %d, 0x%" PRIX64, ret, joules_reading);
 
   joules_reading = byteswap(joules_reading & 0xffffffffffULL) >> 24;
@@ -186,6 +183,7 @@ bool INA228Component::read_charge_(double &coulombs_out) {
 
 bool INA228Component::clear_energy_counter_() {
   ConfigurationRegister cfg{0};
+  ESP_LOGD(TAG, "clear_energy_counter_");
   auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
   cfg.RSTACC = true;
   ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
