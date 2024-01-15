@@ -17,7 +17,6 @@ static const double V_SHUNT_LSB_RANGE1 = 0.000078125;
 bool INA228Component::read_u16_(uint8_t reg, uint16_t &out) {
   uint16_t data_in{0};
   auto ret = this->read_register(reg, (uint8_t *) &data_in, 2, false);
-  //  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 2);
   ESP_LOGD(TAG, "read_u16_ 0x%02X, ret= %d, raw 0x%04X", reg, ret, data_in);
   out = byteswap(data_in);
   return ret == i2c::ERROR_OK;
@@ -50,10 +49,10 @@ void INA228Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up INA228...");
 
   ConfigurationRegister cfg{0};
-  cfg.RST = 1;
+  cfg.RST = true;
   auto ret = this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
   if (!ret) {
-    ESP_LOGE(TAG, "Reset failed, check comm?");
+    ESP_LOGE(TAG, "Reset failed, check connection");
     this->mark_failed();
     return;
   }
@@ -64,11 +63,11 @@ void INA228Component::setup() {
   this->read_u16_(RegisterMap::REG_DEVICE_ID, dev_id);
   rev_id = dev_id & 0x0F;
   dev_id >>= 4;
-  ESP_LOGD(TAG, "Manufacturer: 0x%04X, Device ID: 0x%04X, Revision: %d", manufacturer_id, dev_id, rev_id);
+  ESP_LOGI(TAG, "Manufacturer: 0x%04X, Device ID: 0x%04X, Revision: %d", manufacturer_id, dev_id, rev_id);
   delay(1);
 
   if (manufacturer_id != 0x5449 || dev_id != 0x228) {
-    ESP_LOGW(TAG, "Manufacturer and device IDs do not match 0x5449 and 0x228.");
+    ESP_LOGW(TAG, "Manufacturer ID and device IDs do not match original 0x5449 and 0x228.");
   }
 
   this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
@@ -158,7 +157,7 @@ bool INA228Component::read_power_(double &power_out) {
 
 bool INA228Component::read_energy_(double &joules_out) {
   uint64_t joules_reading = 0;  // Only 40 bits used
-  auto ret = this->read_register((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &joules_reading, 5);
+  auto ret = this->read_register((uint8_t) RegisterMap::REG_ENERGY, (uint8_t *) &joules_reading, 5);
   ESP_LOGD(TAG, "read_energy_1 ret= %d, 0x%" PRIX64, ret, joules_reading);
 
   joules_reading = byteswap(joules_reading & 0xffffffffffULL) >> 24;
@@ -170,8 +169,9 @@ bool INA228Component::read_energy_(double &joules_out) {
 
 bool INA228Component::read_charge_(double &coulombs_out) {
   int64_t coulombs_reading = 0;  // Only 40 bits used
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &coulombs_reading, 5);
+  auto ret = this->read_register((uint8_t) RegisterMap::REG_CHARGE, (uint8_t *) &coulombs_reading, 5);
   ESP_LOGD(TAG, "read_charge_1 is %s, 0x%" PRIX64, TRUEFALSE(ret), coulombs_reading);
+
   bool sign = coulombs_reading & 0x80;
   coulombs_reading = byteswap(coulombs_reading & 0xffffffffffULL) >> 24;
   if (sign)
