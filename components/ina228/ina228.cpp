@@ -16,33 +16,35 @@ static const double V_SHUNT_LSB_RANGE1 = 0.000078125;
 
 bool INA228Component::read_u16_(uint8_t reg, uint16_t &out) {
   uint16_t data_in{0};
-  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 2);
-  ESP_LOGD(TAG, "read_u16_ 0x%02X is %s, raw 0x%04X", reg, TRUEFALSE(ret), data_in);
+  auto ret = this->read_register(reg, (uint8_t *) &data_in, 2, false);
+  //  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 2);
+  ESP_LOGD(TAG, "read_u16_ 0x%02X, ret= %d, raw 0x%04X", reg, ret, data_in);
   out = byteswap(data_in);
-  return ret;
+  return ret == i2c::ERROR_OK;
 }
 
 bool INA228Component::read_s20_4_(uint8_t reg, int32_t &out) {
   // Two's complement value. Highest bit is the sign
   int32_t data_in{0};
-  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 3);
-  ESP_LOGD(TAG, "read_s20_4_ 0x%02X is %s, raw 0x%08X", reg, TRUEFALSE(ret), data_in);
+  auto ret = this->read_register(reg, (uint8_t *) &data_in, 3, false);
+  //  auto ret = this->read_bytes(reg, (uint8_t *) &data_in, 3, );
+  ESP_LOGD(TAG, "read_s20_4_ 0x%02X, ret= %d, raw 0x%08X", reg, ret, data_in);
 
-  data_in = byteswap(data_in & 0xffffff);
-  if (data_in & 0x800000)
-    data_in |= 0xFF000000;
-  data_in >>= 4;
-
-  return ret;
+  bool sign = data_in & 0x80;
+  data_in = byteswap(data_in & 0xFFFFFF) >> 12;
+  if (sign)
+    data_in += 0xFFF00000;
+  return ret == i2c::ERROR_OK;
 }
 
 bool INA228Component::write_u16_(uint8_t reg, uint16_t val) {
   uint16_t data_out = byteswap(val);
-  auto ret = this->write_bytes(reg, (uint8_t *) &data_out, 2);
-  if (!ret) {
-    ESP_LOGD(TAG, "write_u16 failed reg=0x%02X, val=0x%04X", reg, val);
+  auto ret = this->write_register(reg, (uint8_t *) &data_out, 2, false);
+  //  auto ret = this->write_bytes(reg, (uint8_t *) &data_out, 2);
+  if (ret != i2c::ERROR_OK) {
+    ESP_LOGD(TAG, "write_u16 failed ret=%d, reg=0x%02X, val=0x%04X", ret, reg, val);
   }
-  return ret;
+  return ret == i2c::ERROR_OK;
 }
 
 void INA228Component::setup() {
@@ -112,7 +114,7 @@ bool INA228Component::read_volt_shunt_(double &volt_out) {
   int32_t volt_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VSHUNT, volt_reading);
   ESP_LOGD(TAG, "read_volt_shunt_ is %s, 0x%08X", TRUEFALSE(ret), volt_reading);
-  volt_out = (volt_reading) * (this->adc_range_ ? V_SHUNT_LSB_RANGE1 : V_SHUNT_LSB_RANGE0);
+  volt_out = (this->adc_range_ ? V_SHUNT_LSB_RANGE1 : V_SHUNT_LSB_RANGE0) * (double) volt_reading;
 
   return ret;
 }
@@ -121,7 +123,7 @@ bool INA228Component::read_voltage_(double &volt_out) {
   int32_t volt_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, volt_reading);
   ESP_LOGD(TAG, "read_voltage_ is %s, 0x%08X", TRUEFALSE(ret), volt_reading);
-  volt_out = (volt_reading) *VBUS_LSB;
+  volt_out = VBUS_LSB * (double) volt_reading;
 
   return ret;
 }
@@ -139,41 +141,43 @@ bool INA228Component::read_current_(double &amps_out) {
   int32_t amps_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, amps_reading);
   ESP_LOGD(TAG, "read_voltage_ is %s, 0x%08X", TRUEFALSE(ret), amps_reading);
-  amps_out = (amps_reading) * this->current_lsb_;
+  amps_out = this->current_lsb_ * (double) amps_reading;
 
   return ret;
 }
 
 bool INA228Component::read_power_(double &power_out) {
   uint32_t power_reading = 0;
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_POWER, (uint8_t *) &power_reading, 3);
-  ESP_LOGD(TAG, "read_power_1 is %s, 0x%08X", TRUEFALSE(ret), power_reading);
+  auto ret = this->read_register((uint8_t) RegisterMap::REG_POWER, (uint8_t *) &power_reading, 3, false);
+  ESP_LOGD(TAG, "read_power_1 ret= %d, 0x%08X", ret, power_reading);
 
-  power_reading = byteswap(power_reading & 0xffffff);  // >> 8;
-  ESP_LOGD(TAG, "read_power_2 is %s, 0x%08X", TRUEFALSE(ret), power_reading);
-  power_out = 3.2 * this->current_lsb_ * power_reading;
+  power_reading = byteswap(power_reading & 0xffffff) >> 8;
+  ESP_LOGD(TAG, "read_power_2 ret= %d, 0x%08X", ret, power_reading);
+  power_out = 3.2 * this->current_lsb_ * (double) power_reading;
 
-  return ret;
+  return ret == i2c::ERROR_OK;
 }
 
 bool INA228Component::read_energy_(double &joules_out) {
   uint64_t joules_reading = 0;  // Only 40 bits used
-  auto ret = this->read_bytes((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &joules_reading, 5);
-  ESP_LOGD(TAG, "read_energy_1 is %s, 0x%" PRIX64, TRUEFALSE(ret), joules_reading);
+  auto ret = this->read_register((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &joules_reading, 5, false);
+  ESP_LOGD(TAG, "read_energy_1 ret= %d, 0x%" PRIX64, ret, joules_reading);
 
-  joules_reading = byteswap(joules_reading & 0xffffffffffULL);
-  ESP_LOGD(TAG, "read_energy_2 is %s, 0x%" PRIX64, TRUEFALSE(ret), joules_reading);
-  joules_out = 16 * 3.2 * this->current_lsb_ * (double) joules_reading;
+  joules_reading = byteswap(joules_reading & 0xffffffffffULL) >> 24;
+  ESP_LOGD(TAG, "read_energy_2 ret= %d, 0x%" PRIX64, ret, joules_reading);
+  joules_out = 16.0f * 3.2f * this->current_lsb_ * (double) joules_reading;
 
-  return ret;
+  return ret == i2c::ERROR_OK;
 }
 
 bool INA228Component::read_charge_(double &coulombs_out) {
-  uint64_t coulombs_reading = 0;  // Only 40 bits used
+  int64_t coulombs_reading = 0;  // Only 40 bits used
   auto ret = this->read_bytes((uint8_t) RegisterMap::REG_VSHUNT, (uint8_t *) &coulombs_reading, 5);
   ESP_LOGD(TAG, "read_charge_1 is %s, 0x%" PRIX64, TRUEFALSE(ret), coulombs_reading);
-
-  coulombs_reading = byteswap(coulombs_reading & 0xffffffffffULL);
+  bool sign = coulombs_reading & 0x80;
+  coulombs_reading = byteswap(coulombs_reading & 0xffffffffffULL) >> 24;
+  if (sign)
+    coulombs_reading += 0xFFFFFF0000000000;
   ESP_LOGD(TAG, "read_charge_2 is %s, 0x%" PRIX64, TRUEFALSE(ret), coulombs_reading);
   coulombs_out = this->current_lsb_ * (double) coulombs_reading;
 
