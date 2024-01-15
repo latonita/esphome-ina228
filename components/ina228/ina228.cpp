@@ -137,7 +137,7 @@ bool INA228Component::read_die_temp_(double &temp) {
 
 bool INA228Component::read_current_(double &amps_out) {
   int32_t amps_reading = 0;
-  auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, amps_reading);
+  auto ret = this->read_s20_4_(RegisterMap::REG_CURRENT, amps_reading);
   ESP_LOGD(TAG, "read_voltage_ is %s, 0x%08X", TRUEFALSE(ret), amps_reading);
   amps_out = this->current_lsb_ * (double) amps_reading;
 
