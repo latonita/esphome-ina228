@@ -30,10 +30,10 @@ enum RegisterMap : uint8_t {
   REG_DEVICE_ID = 0x3F
 };
 
-// enum AdcRange : uint8_t {
-//   ADC_RANGE_0 = 0,
-//   ADC_RANGE_1 = 1,
-// };
+enum AdcRange : uint8_t {
+  ADC_RANGE_0 = 0,
+  ADC_RANGE_1 = 1,
+};
 
 enum AdcSpeed : uint8_t {
   ADC_SPEED_50US = 0,
@@ -81,7 +81,6 @@ union AdcConfigurationRegister {
     uint8_t MODE : 4;
   };
 };
-
 #pragma pack(pop)
 
 class INA228Component : public PollingComponent, public i2c::I2CDevice {
@@ -93,6 +92,7 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
 
   void set_shunt_resistance_ohm(float shunt_resistance_ohm) { shunt_resistance_ohm_ = shunt_resistance_ohm; }
   void set_max_current_a(float max_current_a) { max_current_a_ = max_current_a; }
+  void set_adc_range(int range) { adc_range_ = range; }
 
   void set_shunt_voltage_sensor(sensor::Sensor *sensor) { shunt_voltage_sensor_ = sensor; }
   void set_bus_voltage_sensor(sensor::Sensor *sensor) { bus_voltage_sensor_ = sensor; }
@@ -117,7 +117,6 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
   bool read_u16_(uint8_t reg, uint16_t &out);
   bool read_s20_4_(uint8_t reg, int32_t &out);
   bool write_u16_(uint8_t reg, uint16_t val);
-  
 
   double shunt_resistance_ohm_;
   double max_current_a_;

@@ -73,6 +73,9 @@ void INA228Component::setup() {
   this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
   delay(2);
 
+  this->set_adc_range_(this->adc_range_);
+  delay(2);
+
   this->clear_energy_counter_();
   delay(2);
 
@@ -88,7 +91,14 @@ void INA228Component::setup() {
 bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
   this->current_lsb_ = max_current / (2 << 19);  // 2 power of 19
   this->shunt_cal_ = (uint16_t) ((double) (13107.2 * 1000000) * this->current_lsb_ * r_shunt);
+  if (this->adc_range_)
+    this->shunt_cal_ *= 4;
 
+  if (this->shunt_cal_ & 0x8000) {
+    // cant be more than 15 bits
+    ESP_LOGW(TAG, "Shunt value is too high");
+  }
+  this->shunt_cal_ &= 0x7FFF;
   ESP_LOGD(TAG, "New Rshunt=%f ohm, max current=%.3f", r_shunt, max_current);
   ESP_LOGD(TAG, "New CURRENT_LSB=%f, SHUNT_CAL=%u", this->current_lsb_, this->shunt_cal_);
 
@@ -111,7 +121,13 @@ bool INA228Component::read_volt_shunt_(double &volt_out) {
   int32_t volt_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VSHUNT, volt_reading);
   ESP_LOGD(TAG, "read_volt_shunt_ is %s, 0x%08X", TRUEFALSE(ret), volt_reading);
-  volt_out = (this->adc_range_ ? V_SHUNT_LSB_RANGE1 : V_SHUNT_LSB_RANGE0) * (double) volt_reading;
+
+  // ±163.84 mV (ADCRANGE = 0) 312.5 nV/LSB   0.0000003125
+  // static const double V_SHUNT_LSB_RANGE0 = 0.0003125;
+  // ±40.96 mV (ADCRANGE = 1) 78.125 nV/LSB
+  // static const double V_SHUNT_LSB_RANGE1 = 0.000078125;
+
+  volt_out = (this->adc_range_ ? V_SHUNT_LSB_RANGE1 : V_SHUNT_LSB_RANGE0) * (double) volt_reading;  // mV
 
   return ret;
 }
@@ -120,6 +136,10 @@ bool INA228Component::read_voltage_(double &volt_out) {
   int32_t volt_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, volt_reading);
   ESP_LOGD(TAG, "read_voltage_ is %s, 0x%08X", TRUEFALSE(ret), volt_reading);
+  // Range:      0 V to 85 V
+  // Resolution: 195.3125 µV/LSB
+  //  static const double VBUS_LSB = 0.0001953125; // V
+
   volt_out = VBUS_LSB * (double) volt_reading;
 
   return ret;
@@ -128,7 +148,7 @@ bool INA228Component::read_voltage_(double &volt_out) {
 bool INA228Component::read_die_temp_(double &temp) {
   uint16_t temp_reading = 0;
   auto ret = this->read_u16_(RegisterMap::REG_DIETEMP, temp_reading);
-  ESP_LOGD(TAG, "read_voltage_ is %s, 0x%04X", TRUEFALSE(ret), temp_reading);
+  ESP_LOGD(TAG, "read_die_temp_ is %s, 0x%04X", TRUEFALSE(ret), temp_reading);
   temp = DIE_TEMP_LSB * (double) temp_reading;
 
   return ret;
@@ -137,7 +157,7 @@ bool INA228Component::read_die_temp_(double &temp) {
 bool INA228Component::read_current_(double &amps_out) {
   int32_t amps_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_CURRENT, amps_reading);
-  ESP_LOGD(TAG, "read_voltage_ is %s, 0x%08X", TRUEFALSE(ret), amps_reading);
+  ESP_LOGD(TAG, "read_current_ is %s, 0x%08X", TRUEFALSE(ret), amps_reading);
   amps_out = this->current_lsb_ * (double) amps_reading;
 
   return ret;

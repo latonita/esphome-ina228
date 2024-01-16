@@ -27,9 +27,12 @@ DEPENDENCIES = ["i2c"]
 
 UNIT_JOULE = "J"
 UNIT_COULOMB = "C" 
+UNIT_MILLIVOLT = "mV"
+
 
 CONF_CHARGE = "charge"
 CONF_ENERGY = "energy"
+CONF_ADC_RANGE = "adc_range"
 
 ina228_ns = cg.esphome_ns.namespace("ina228")
 INA228Component = ina228_ns.class_(
@@ -39,9 +42,16 @@ INA228Component = ina228_ns.class_(
 CONFIG_SCHEMA = (
     cv.Schema(
         {
+            cv.Required(CONF_SHUNT_RESISTANCE): cv.All(
+                cv.resistance, cv.Range(min=0.0)
+            ),
+            cv.Required(CONF_MAX_CURRENT): cv.All(
+                cv.current, cv.Range(min=0.0)
+            ),
+            cv.Optional(CONF_ADC_RANGE, default=0): cv.int_range(min=0, max=1),
             cv.GenerateID(): cv.declare_id(INA228Component),
             cv.Optional(CONF_SHUNT_VOLTAGE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_VOLT,
+                unit_of_measurement=UNIT_MILLIVOLT,
                 accuracy_decimals=5,
                 device_class=DEVICE_CLASS_VOLTAGE,
                 state_class=STATE_CLASS_MEASUREMENT,
@@ -82,12 +92,6 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_ENERGY,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
-            cv.Optional(CONF_SHUNT_RESISTANCE, default=0.1): cv.All(
-                cv.resistance, cv.Range(min=0.0)
-            ),
-            cv.Optional(CONF_MAX_CURRENT, default=10.0): cv.All(
-                cv.current, cv.Range(min=0.0)
-            ),
         }
     )
     .extend(cv.polling_component_schema("60s"))
@@ -102,6 +106,7 @@ async def to_code(config):
 
     cg.add(var.set_shunt_resistance_ohm(config[CONF_SHUNT_RESISTANCE]))
     cg.add(var.set_max_current_a(config[CONF_MAX_CURRENT]))
+    cg.add(var.set_adc_range(config[CONF_ADC_RANGE]))
 
     if conf := config.get(CONF_SHUNT_VOLTAGE):
         sens = await sensor.new_sensor(conf)
