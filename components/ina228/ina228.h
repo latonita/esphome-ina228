@@ -63,7 +63,7 @@ union ConfigurationRegister {
   uint16_t raw_u16;
   struct {
     uint8_t reserved_0_3 : 4;
-    bool ADCRANGE;
+    AdcRange ADCRANGE : 1;
     bool TEMPCOMP;
     uint8_t CONVDLY;  // Sets the Delay for initial ADC conversion in steps of 2 ms.
     bool RSTACC;
@@ -81,6 +81,36 @@ union AdcConfigurationRegister {
     uint8_t MODE : 4;
   };
 };
+
+union TempCompensationRegister {
+  uint16_t raw_u16;
+  struct {
+    uint16_t TEMPCO : 14;
+    uint16_t reserved : 2;
+  };
+};
+
+union DiagnosticRegister {
+  uint16_t raw_u16;
+  struct {
+    bool MEMSTAT : 1;
+    bool CNVRF : 1;
+    bool POL : 1;
+    bool BUSUL : 1;
+    bool BUSOL : 1;
+    bool SHNTUL : 1;
+    bool SHNTOL : 1;
+    bool TMPOL : 1;
+    bool RESERVED1 : 1;
+    bool MATHOF : 1;
+    bool CHARGEOF : 1;
+    bool ENERGYOF : 1;
+    bool APOL : 1;
+    bool SLOWALERT : 1;
+    bool CNVR : 1;
+    bool ALATCH : 1;
+  };
+};
 #pragma pack(pop)
 
 class INA228Component : public PollingComponent, public i2c::I2CDevice {
@@ -92,7 +122,7 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
 
   void set_shunt_resistance_ohm(float shunt_resistance_ohm) { shunt_resistance_ohm_ = shunt_resistance_ohm; }
   void set_max_current_a(float max_current_a) { max_current_a_ = max_current_a; }
-  void set_adc_range(int range) { adc_range_ = range; }
+  void set_adc_range(uint8_t range) { adc_range_ = static_cast<AdcRange>(range); }
 
   void set_shunt_voltage_sensor(sensor::Sensor *sensor) { shunt_voltage_sensor_ = sensor; }
   void set_bus_voltage_sensor(sensor::Sensor *sensor) { bus_voltage_sensor_ = sensor; }
@@ -102,9 +132,13 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
   void set_energy_sensor(sensor::Sensor *sensor) { energy_sensor_ = sensor; }
   void set_charge_sensor(sensor::Sensor *sensor) { charge_sensor_ = sensor; }
 
+  bool reset_energy_counters();
+
  protected:
+  bool reset_config_();
+
   bool configure_shunt_(double max_current, double r_shunt);
-  bool set_adc_range_(bool adc_range);
+  bool configure_adc_range_();
   bool read_voltage_(double &volt_out);
   bool read_current_(double &amps_out);
   bool read_die_temp_(double &temp);
@@ -112,18 +146,22 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
   bool read_power_(double &power_out);
   bool read_energy_(double &joules_out);
   bool read_charge_(double &coulombs_out);
-  bool clear_energy_counter_();
+  bool read_diagnostics_and_act_();
 
   bool read_u16_(uint8_t reg, uint16_t &out);
+  bool read_u24_(uint8_t reg, uint32_t &out);
+
   bool read_s20_4_(uint8_t reg, int32_t &out);
   bool write_u16_(uint8_t reg, uint16_t val);
 
   double shunt_resistance_ohm_;
   double max_current_a_;
-  bool adc_range_{false};
-  uint8_t addr_msb_{0};
+  AdcRange adc_range_{AdcRange::ADC_RANGE_0};
   uint16_t shunt_cal_{0};
   double current_lsb_{0};
+
+  uint32_t energy_overflows_count_{0};
+  uint32_t charge_overflows_count_{0};
 
   sensor::Sensor *shunt_voltage_sensor_{nullptr};
   sensor::Sensor *bus_voltage_sensor_{nullptr};

@@ -9,6 +9,8 @@ namespace ina228 {
 
 static const char *const TAG = "ina228";
 
+#define OKFAILED(b) ((b) ? "OK" : "FAILED")
+
 static const double VBUS_LSB = 0.0001953125;
 static const double DIE_TEMP_LSB = 0.0078125;
 static const double V_SHUNT_LSB_RANGE0 = 0.0003125;
@@ -19,6 +21,16 @@ bool INA228Component::read_u16_(uint8_t reg, uint16_t &out) {
   auto ret = this->read_register(reg, (uint8_t *) &data_in, 2, false);
   ESP_LOGD(TAG, "read_u16_ 0x%02X, ret= %d, raw 0x%04X", reg, ret, data_in);
   out = byteswap(data_in);
+  return ret == i2c::ERROR_OK;
+}
+
+bool INA228Component::read_u24_(uint8_t reg, uint32_t &out) {
+  // Two's complement value. Highest bit is the sign
+  uint32_t data_in{0};
+  auto ret = this->read_register(reg, (uint8_t *) &data_in, 3, false);
+  ESP_LOGD(TAG, "read_u24_ 0x%02X, ret= %d, raw 0x%08X", reg, ret, data_in);
+
+  out = byteswap(data_in & 0xFFFFFF) >> 8;
   return ret == i2c::ERROR_OK;
 }
 
@@ -42,21 +54,25 @@ bool INA228Component::write_u16_(uint8_t reg, uint16_t val) {
   if (ret != i2c::ERROR_OK) {
     ESP_LOGD(TAG, "write_u16 failed ret=%d, reg=0x%02X, val=0x%04X", ret, reg, val);
   }
+
+  if (reg == RegisterMap::REG_CONFIG) {
+    ConfigurationRegister cr{0};
+    cr.raw_u16 = val;
+    this->adc_range_ = cr.ADCRANGE;
+  }
+
   return ret == i2c::ERROR_OK;
 }
 
 void INA228Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up INA228...");
 
-  ConfigurationRegister cfg{0};
-  cfg.RST = true;
-  auto ret = this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-  if (!ret) {
+  if (!this->reset_config_()) {
     ESP_LOGE(TAG, "Reset failed, check connection");
     this->mark_failed();
     return;
   }
-  delay(1);
+  delay(2);
 
   uint16_t manufacturer_id{0}, dev_id{0}, rev_id{0};
   this->read_u16_(RegisterMap::REG_MANUFACTURER_ID, manufacturer_id);
@@ -69,23 +85,50 @@ void INA228Component::setup() {
   if (manufacturer_id != 0x5449 || dev_id != 0x228) {
     ESP_LOGW(TAG, "Manufacturer ID and device IDs do not match original 0x5449 and 0x228.");
   }
+  bool ret = false;
+
+  AdcConfigurationRegister adc_cfg{0};
+  ret = this->read_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
+  ESP_LOGD(TAG, "Read REG_ADC_CONFIG returned %s, 0x%04X", OKFAILED(ret), adc_cfg.raw_u16);
+
+  adc_cfg.MODE = 0x0F;  // Fh = Continuous bus voltage, shunt voltage and temperature
+  adc_cfg.VBUSCT = AdcSpeed::ADC_SPEED_1052US;
+  adc_cfg.VSHCT = AdcSpeed::ADC_SPEED_1052US;
+  adc_cfg.VTCT = AdcSpeed::ADC_SPEED_1052US;
+  adc_cfg.AVG = AdcSample::ADC_SAMPLE_1;
+  ret = this->write_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
+  ESP_LOGD(TAG, "Write REG_ADC_CONFIG2 returned %s, 0x%04X", OKFAILED(ret), adc_cfg.raw_u16);
+  delay(2);
+
+  ret = this->read_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
+  ESP_LOGD(TAG, "Checking ... Read REG_ADC_CONFIG returned %s, 0x%04X", OKFAILED(ret), adc_cfg.raw_u16);
+  delay(2);
 
   this->configure_shunt_(this->max_current_a_, this->shunt_resistance_ohm_);
   delay(2);
 
-  this->set_adc_range_(this->adc_range_);
+  this->configure_adc_range_();
   delay(2);
+}
 
-  this->clear_energy_counter_();
-  delay(2);
+bool INA228Component::reset_config_() {
+  ESP_LOGD(TAG,"Reset");
+  ConfigurationRegister cfg{0};
+  cfg.RST = true;
+  return this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
+}
 
-  AdcConfigurationRegister adc_cfg{0};
-  ret = this->read_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
-  ESP_LOGD(TAG, "Read REG_ADC_CONFIG returned %s, 0x%04X", TRUEFALSE(ret), adc_cfg.raw_u16);
-  adc_cfg.MODE = 0x0f;  // Fh = Continuous bus voltage, shunt voltage and temperature
-  ret = this->write_u16_(RegisterMap::REG_ADC_CONFIG, adc_cfg.raw_u16);
-  ESP_LOGD(TAG, "Read REG_ADC_CONFIG2 returned %s, 0x%04X", TRUEFALSE(ret), adc_cfg.raw_u16);
-  delay(2);
+bool INA228Component::reset_energy_counters() {
+  ConfigurationRegister cfg{0};
+  ESP_LOGD(TAG, "clear_energy_counter_");
+  auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
+  cfg.RSTACC = true;
+  cfg.ADCRANGE = this->adc_range_;
+  ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
+
+  this->energy_overflows_count_ = 0;
+  this->charge_overflows_count_ = 0;
+  return ret;
 }
 
 bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
@@ -105,14 +148,15 @@ bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
   return this->write_u16_(RegisterMap::REG_SHUNT_CAL, this->shunt_cal_);
 }
 
-bool INA228Component::set_adc_range_(bool adc_range) {
+bool INA228Component::configure_adc_range_() {
+  ESP_LOGD(TAG, "Setting ADCRANGE = %d", (uint8_t)this->adc_range_);
   ConfigurationRegister cfg{0};
   auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-  ESP_LOGD(TAG, "set_adc_range_ is %s, read: 0x%04X", TRUEFALSE(ret), cfg.raw_u16);
-  cfg.ADCRANGE = adc_range;
+  ESP_LOGD(TAG, "set_adc_range_ %s, read: 0x%04X", OKFAILED(ret), cfg.raw_u16);
+  cfg.ADCRANGE = this->adc_range_;
+
   ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-  ESP_LOGD(TAG, "set_adc_range_ is %s, write: 0x%04X", TRUEFALSE(ret), cfg.raw_u16);
-  this->adc_range_ = adc_range;
+  ESP_LOGD(TAG, "set_adc_range_ %s, write: 0x%04X", OKFAILED(ret), cfg.raw_u16);
 
   return ret;
 }
@@ -120,13 +164,13 @@ bool INA228Component::set_adc_range_(bool adc_range) {
 bool INA228Component::read_volt_shunt_(double &volt_out) {
   int32_t volt_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VSHUNT, volt_reading);
-  ESP_LOGD(TAG, "read_volt_shunt_ is %s, 0x%08X", TRUEFALSE(ret), volt_reading);
+  ESP_LOGD(TAG, "read_volt_shunt_ %s, 0x%08X, adc_range=%d", OKFAILED(ret), volt_reading, this->adc_range_ ? 1 : 0);
 
   // ±163.84 mV (ADCRANGE = 0) 312.5 nV/LSB   0.0000003125
   // static const double V_SHUNT_LSB_RANGE0 = 0.0003125;
+
   // ±40.96 mV (ADCRANGE = 1) 78.125 nV/LSB
   // static const double V_SHUNT_LSB_RANGE1 = 0.000078125;
-
   volt_out = (this->adc_range_ ? V_SHUNT_LSB_RANGE1 : V_SHUNT_LSB_RANGE0) * (double) volt_reading;  // mV
 
   return ret;
@@ -135,7 +179,7 @@ bool INA228Component::read_volt_shunt_(double &volt_out) {
 bool INA228Component::read_voltage_(double &volt_out) {
   int32_t volt_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_VBUS, volt_reading);
-  ESP_LOGD(TAG, "read_voltage_ is %s, 0x%08X", TRUEFALSE(ret), volt_reading);
+  ESP_LOGD(TAG, "read_voltage_ %s, 0x%08X", OKFAILED(ret), volt_reading);
   // Range:      0 V to 85 V
   // Resolution: 195.3125 µV/LSB
   //  static const double VBUS_LSB = 0.0001953125; // V
@@ -148,7 +192,7 @@ bool INA228Component::read_voltage_(double &volt_out) {
 bool INA228Component::read_die_temp_(double &temp) {
   uint16_t temp_reading = 0;
   auto ret = this->read_u16_(RegisterMap::REG_DIETEMP, temp_reading);
-  ESP_LOGD(TAG, "read_die_temp_ is %s, 0x%04X", TRUEFALSE(ret), temp_reading);
+  ESP_LOGD(TAG, "read_die_temp_ %s, 0x%04X", OKFAILED(ret), temp_reading);
   temp = DIE_TEMP_LSB * (double) temp_reading;
 
   return ret;
@@ -157,7 +201,7 @@ bool INA228Component::read_die_temp_(double &temp) {
 bool INA228Component::read_current_(double &amps_out) {
   int32_t amps_reading = 0;
   auto ret = this->read_s20_4_(RegisterMap::REG_CURRENT, amps_reading);
-  ESP_LOGD(TAG, "read_current_ is %s, 0x%08X", TRUEFALSE(ret), amps_reading);
+  ESP_LOGD(TAG, "read_current_ is %s, 0x%08X, current_lsb=%f", TRUEFALSE(ret), amps_reading, this->current_lsb_);
   amps_out = this->current_lsb_ * (double) amps_reading;
 
   return ret;
@@ -175,40 +219,57 @@ bool INA228Component::read_power_(double &power_out) {
   return ret == i2c::ERROR_OK;
 }
 
+static constexpr uint64_t OVF_40BIT = (((uint64_t) 1) << 40);
+
 bool INA228Component::read_energy_(double &joules_out) {
   uint64_t joules_reading = 0;  // Only 40 bits used
   auto ret = this->read_register((uint8_t) RegisterMap::REG_ENERGY, (uint8_t *) &joules_reading, 5);
-  ESP_LOGD(TAG, "read_energy_1 ret= %d, 0x%" PRIX64, ret, joules_reading);
+  ESP_LOGD(TAG, "read_energy_1 ret_err= %d, raw 0x%" PRIX64, ret, joules_reading);
 
   joules_reading = byteswap(joules_reading & 0xffffffffffULL) >> 24;
-  ESP_LOGD(TAG, "read_energy_2 ret= %d, 0x%" PRIX64, ret, joules_reading);
-  joules_out = 16.0f * 3.2f * this->current_lsb_ * (double) joules_reading;
+  ESP_LOGD(TAG, "read_energy_2 ret_err= %d, 0x%" PRIX64 ", current_lsb=%f, overflow_cnt=%d", ret, joules_reading,
+           this->current_lsb_, this->energy_overflows_count_);
+  uint64_t previous_energy = OVF_40BIT * this->energy_overflows_count_;
+  joules_out = 16.0f * 3.2f * this->current_lsb_ * (double) joules_reading + (double) previous_energy;
 
   return ret == i2c::ERROR_OK;
 }
 
+static constexpr uint64_t OVF_39BIT = (((uint64_t) 1) << 39);
+
 bool INA228Component::read_charge_(double &coulombs_out) {
   int64_t coulombs_reading = 0;  // Only 40 bits used
   auto ret = this->read_register((uint8_t) RegisterMap::REG_CHARGE, (uint8_t *) &coulombs_reading, 5);
-  ESP_LOGD(TAG, "read_charge_1 is %s, 0x%" PRIX64, TRUEFALSE(ret), coulombs_reading);
+  ESP_LOGD(TAG, "read_charge_1 ret_err= %d, 0x%" PRIX64, ret, coulombs_reading);
 
   bool sign = coulombs_reading & 0x80;
   coulombs_reading = byteswap(coulombs_reading & 0xffffffffffULL) >> 24;
   if (sign)
     coulombs_reading += 0xFFFFFF0000000000;
-  ESP_LOGD(TAG, "read_charge_2 is %s, 0x%" PRIX64, TRUEFALSE(ret), coulombs_reading);
-  coulombs_out = this->current_lsb_ * (double) coulombs_reading;
 
-  return ret;
+  uint64_t previous_charge =
+      OVF_39BIT *
+      this->charge_overflows_count_;  // and what to do with this? datasheet doesnt tell us what if charge is negative
+
+  ESP_LOGD(TAG, "read_charge_2 ret_err=%d, 0x%" PRIX64 ", current_lsb=%f, overflow_cnt=%d", ret, coulombs_reading,
+           this->current_lsb_, this->charge_overflows_count_);
+  coulombs_out = this->current_lsb_ * (double) coulombs_reading + (double) previous_charge;
+
+  return ret == i2c::ERROR_OK;
 }
 
-bool INA228Component::clear_energy_counter_() {
-  ConfigurationRegister cfg{0};
-  ESP_LOGD(TAG, "clear_energy_counter_");
-  auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-  cfg.RSTACC = true;
-  ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-  return ret;
+bool INA228Component::read_diagnostics_and_act_() {
+  DiagnosticRegister diag{0};
+  auto ret = this->read_u16_(RegisterMap::REG_DIAG_ALRT, diag.raw_u16);
+  ESP_LOGD(TAG, "read_diagnostics_and_act_ %s, 0x%04X", OKFAILED(ret), diag.raw_u16);
+
+  if (diag.ENERGYOF)
+    this->energy_overflows_count_++;  // 40-bit overflow
+
+  if (diag.CHARGEOF)
+    this->charge_overflows_count_++;  // 40-bit overflow
+
+  return ret == i2c::ERROR_OK;
 }
 
 void INA228Component::dump_config() {
@@ -220,6 +281,11 @@ void INA228Component::dump_config() {
     return;
   }
   LOG_UPDATE_INTERVAL(this);
+  ESP_LOGCONFIG(TAG, "  Shunt resistance = %f Ohm", shunt_resistance_ohm_);
+  ESP_LOGCONFIG(TAG, "  Max current = %f A", this->max_current_a_);
+  ESP_LOGCONFIG(TAG, "  ADCRANGE = %d (%s)", (uint8_t) this->adc_range_, this->adc_range_ ? "±40.96 mV" : "±163.84 mV");
+  ESP_LOGCONFIG(TAG, "  Configured: CURRENT_LSB = %f", this->current_lsb_);
+  ESP_LOGCONFIG(TAG, "  Configured: SHUNT_CAL = %d", this->shunt_cal_);
 
   LOG_SENSOR("  ", "Shunt Voltage", this->shunt_voltage_sensor_);
   LOG_SENSOR("  ", "Bus Voltage", this->bus_voltage_sensor_);
@@ -277,6 +343,10 @@ void INA228Component::update() {
       this->status_set_warning();
     }
     this->power_sensor_->publish_state(power);
+  }
+
+  if (this->energy_sensor_ != nullptr || this->charge_sensor_ != nullptr) {
+    this->read_diagnostics_and_act_();
   }
 
   if (this->energy_sensor_ != nullptr) {
