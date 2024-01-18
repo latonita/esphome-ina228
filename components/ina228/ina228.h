@@ -122,7 +122,7 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
 
   void set_shunt_resistance_ohm(float shunt_resistance_ohm) { shunt_resistance_ohm_ = shunt_resistance_ohm; }
   void set_max_current_a(float max_current_a) { max_current_a_ = max_current_a; }
-  void set_adc_range(uint8_t range) { adc_range_ = static_cast<AdcRange>(range); }
+  void set_adc_range(uint8_t range) { adc_range_ = (range == 0) ? AdcRange::ADC_RANGE_0 : AdcRange::ADC_RANGE_1; }
 
   void set_shunt_voltage_sensor(sensor::Sensor *sensor) { shunt_voltage_sensor_ = sensor; }
   void set_bus_voltage_sensor(sensor::Sensor *sensor) { bus_voltage_sensor_ = sensor; }
@@ -170,6 +170,8 @@ class INA228Component : public PollingComponent, public i2c::I2CDevice {
   sensor::Sensor *power_sensor_{nullptr};
   sensor::Sensor *energy_sensor_{nullptr};
   sensor::Sensor *charge_sensor_{nullptr};
+
+  bool initialized{false};
 };
 
 }  // namespace ina228

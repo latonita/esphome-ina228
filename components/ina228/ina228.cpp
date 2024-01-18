@@ -54,13 +54,6 @@ bool INA228Component::write_u16_(uint8_t reg, uint16_t val) {
   if (ret != i2c::ERROR_OK) {
     ESP_LOGD(TAG, "write_u16 failed ret=%d, reg=0x%02X, val=0x%04X", ret, reg, val);
   }
-
-  if (reg == RegisterMap::REG_CONFIG) {
-    ConfigurationRegister cr{0};
-    cr.raw_u16 = val;
-    this->adc_range_ = cr.ADCRANGE;
-  }
-
   return ret == i2c::ERROR_OK;
 }
 
@@ -112,7 +105,7 @@ void INA228Component::setup() {
 }
 
 bool INA228Component::reset_config_() {
-  ESP_LOGD(TAG,"Reset");
+  ESP_LOGD(TAG, "Reset");
   ConfigurationRegister cfg{0};
   cfg.RST = true;
   return this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
@@ -149,10 +142,10 @@ bool INA228Component::configure_shunt_(double max_current, double r_shunt) {
 }
 
 bool INA228Component::configure_adc_range_() {
-  ESP_LOGD(TAG, "Setting ADCRANGE = %d", (uint8_t)this->adc_range_);
+  ESP_LOGD(TAG, "Setting ADCRANGE = %d", (uint8_t) this->adc_range_);
   ConfigurationRegister cfg{0};
   auto ret = this->read_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
-  ESP_LOGD(TAG, "set_adc_range_ %s, read: 0x%04X", OKFAILED(ret), cfg.raw_u16);
+  ESP_LOGD(TAG, "set_adc_ranged_ %s, read: 0x%04X", OKFAILED(ret), cfg.raw_u16);
   cfg.ADCRANGE = this->adc_range_;
 
   ret = ret && this->write_u16_(RegisterMap::REG_CONFIG, cfg.raw_u16);
