@@ -57,18 +57,16 @@ enum AdcSample : uint8_t {
   ADC_SAMPLE_1024 = 7,
 };
 
-#pragma pack(push)
-#pragma pack(1)
 union ConfigurationRegister {
   uint16_t raw_u16;
   struct {
-    uint8_t reserved_0_3 : 4;
-    AdcRange ADCRANGE : 1;
-    bool TEMPCOMP;
-    uint8_t CONVDLY;  // Sets the Delay for initial ADC conversion in steps of 2 ms.
-    bool RSTACC;
-    bool RST;
-  };
+    uint8_t reserved_0_3 : 4;  // Reserved
+    AdcRange ADCRANGE : 1;     // Shunt measurement range 0: ±163.84 mV, 1: ±40.96 mV
+    bool TEMPCOMP : 1;         // Temperature compensation enable
+    uint8_t CONVDLY : 8;       // Sets the Delay for initial ADC conversion in steps of 2 ms.
+    bool RSTACC : 1;           // Reset counters
+    bool RST : 1;              // Full device reset
+  } __attribute__((packed));
 };
 
 union AdcConfigurationRegister {
@@ -79,7 +77,7 @@ union AdcConfigurationRegister {
     AdcSpeed VSHCT : 3;
     AdcSpeed VBUSCT : 3;
     uint8_t MODE : 4;
-  };
+  } __attribute__((packed));
 };
 
 union TempCompensationRegister {
@@ -87,7 +85,7 @@ union TempCompensationRegister {
   struct {
     uint16_t TEMPCO : 14;
     uint16_t reserved : 2;
-  };
+  } __attribute__((packed));
 };
 
 union DiagnosticRegister {
@@ -109,9 +107,8 @@ union DiagnosticRegister {
     bool SLOWALERT : 1;
     bool CNVR : 1;
     bool ALATCH : 1;
-  };
+  } __attribute__((packed));
 };
-#pragma pack(pop)
 
 class INA228Component : public PollingComponent, public i2c::I2CDevice {
  public:
