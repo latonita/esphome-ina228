@@ -1,6 +1,10 @@
 INA228 85-V, 20-Bit, Ultra-Precise Power/Energy/Charge Monitor With I2C Interface
 
-EspHome perliminary component
+I2C versions (INA228, INA237, INA238) - done
+SPI versions (INA229, INA239) - to do yet
+
+
+EspHome perliminary component, before submitting PR
 ```
 # Example configuration
 
@@ -20,19 +24,22 @@ logger:
 
 external_components:
   source: github://latonita/esphome-ina228
-  components: [ina228]
+  components: [ina2xx_i2c]
 
 i2c:
 
 sensor:
-  - platform: ina228
+  - platform: ina2xx_i2c
     address: 0x40
-    shunt_resistance: 0.001 ohm
-    max_current: 10 A
-    
+    shunt_resistance: 0.001100 ohm
+    max_current: 40 A
+
     # adc_range 0 -> shunt V ±163.84mV 
     # adc_range 1 -> shunt V ±40.96mV
     adc_range: 0
+
+    # shunt resistor temp coefficient, ppm/�C, integer 0 - 16383
+    temperature_coefficient: 50
     
     update_interval: 60s
     shunt_voltage:
