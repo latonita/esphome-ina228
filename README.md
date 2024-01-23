@@ -24,7 +24,7 @@ logger:
 
 external_components:
   source: github://latonita/esphome-ina228
-  components: [ina2xx_i2c]
+  components: [ina2xx_base, ina2xx_i2c]
 
 i2c:
 
@@ -38,7 +38,7 @@ sensor:
     # adc_range 1 -> shunt V Â±40.96mV
     adc_range: 0
 
-    # shunt resistor temp coefficient, ppm/°C, integer 0 - 16383
+    # shunt resistor temp coefficient, ppm/ï¿½C, integer 0 - 16383
     temperature_coefficient: 50
     
     update_interval: 60s
