@@ -34,12 +34,12 @@ sensor:
     shunt_resistance: 0.001100 ohm
     max_current: 40 A
 
-    # adc_range 0 -> shunt V ±163.84mV 
+    # adc_range 0 -> shunt V ±163.84mV , default
     # adc_range 1 -> shunt V ±40.96mV
     adc_range: 0
 
     # shunt resistor temp coefficient, ppm/�C, integer 0 - 16383
-    temperature_coefficient: 50
+    #temperature_coefficient: 0
     
     update_interval: 60s
     shunt_voltage:
