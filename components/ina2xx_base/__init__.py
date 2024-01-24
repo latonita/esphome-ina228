@@ -4,6 +4,7 @@ from esphome.components import sensor
 from esphome.const import (
     CONF_BUS_VOLTAGE,
     CONF_CURRENT,
+    CONF_ENERGY,
     CONF_MAX_CURRENT,
     CONF_POWER,
     CONF_SHUNT_RESISTANCE,
@@ -27,10 +28,8 @@ UNIT_JOULE = "J"
 UNIT_COULOMB = "C"
 UNIT_MILLIVOLT = "mV"
 
-
 CONF_ADC_RANGE = "adc_range"
 CONF_CHARGE = "charge"
-CONF_ENERGY = "energy"
 CONF_TEMPERATURE_COEFFICIENT = "temperature_coefficient"
 
 ina2xx_base_ns = cg.esphome_ns.namespace("ina2xx_base")
@@ -41,7 +40,9 @@ INA2XX_SCHEMA = cv.Schema(
         cv.Required(CONF_SHUNT_RESISTANCE): cv.All(cv.resistance, cv.Range(min=0.0)),
         cv.Required(CONF_MAX_CURRENT): cv.All(cv.current, cv.Range(min=0.0)),
         cv.Optional(CONF_ADC_RANGE, default=0): cv.int_range(min=0, max=1),
-        cv.Optional(CONF_TEMPERATURE_COEFFICIENT, default=0): cv.int_range(min=0, max=16383),
+        cv.Optional(CONF_TEMPERATURE_COEFFICIENT, default=0): cv.int_range(
+            min=0, max=16383
+        ),
         cv.Optional(CONF_SHUNT_VOLTAGE): sensor.sensor_schema(
             unit_of_measurement=UNIT_MILLIVOLT,
             accuracy_decimals=5,
