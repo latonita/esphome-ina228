@@ -8,21 +8,11 @@ Supported devices
 The ``ina2xx`` sensor platform allows you to use family of Texas Instruments current and power 
 sensors with ESPHome.
 
-- `INA228 <http://www.ti.com/lit/ds/symlink/ina228.pdf>`__     I²C       85-V, 20-Bit, Ultra-Precise Power/Energy/Charge Monitor
-- `INA229 <http://www.ti.com/lit/ds/symlink/ina229.pdf>`__     SPI       85-V, 20-Bit, Ultra-Precise Power/Energy/Charge Monitor
-- `INA238 <http://www.ti.com/lit/ds/symlink/ina238.pdf>`__     I²C       85-V, 16-Bit, High-Precision Power Monitor
-- `INA239 <http://www.ti.com/lit/ds/symlink/ina239.pdf>`__     SPI       85-V, 16-Bit, High-Precision Power Monitor
-- `INA237 <http://www.ti.com/lit/ds/symlink/ina237.pdf>`__     I²C       85-V, 16-Bit, Precision Power Monitor
-
-INA228 85-V, 20-Bit, Ultra-Precise Power/Energy/Charge Monitor With I2C Interface
-
-I2C versions (INA228, INA237, INA238)
-SPI versions (INA229, INA239)
-
-
-
-
-
+- [INA228](http://www.ti.com/lit/ds/symlink/ina228.pdf), I²C 85-V, 20-Bit, Ultra-Precise Power/Energy/Charge Monitor
+- [INA229](http://www.ti.com/lit/ds/symlink/ina229.pdf>), SPI 85-V, 20-Bit, Ultra-Precise Power/Energy/Charge Monitor
+- [INA238](http://www.ti.com/lit/ds/symlink/ina238.pdf>), I²C 85-V, 16-Bit, High-Precision Power Monitor
+- [INA239](http://www.ti.com/lit/ds/symlink/ina239.pdf>), SPI 85-V, 16-Bit, High-Precision Power Monitor
+- [INA237](http://www.ti.com/lit/ds/symlink/ina237.pdf>), I²C 85-V, 16-Bit, Precision Power Monitor
 
 
 # Example configuration entry for I²C
