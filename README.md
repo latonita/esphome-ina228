@@ -31,7 +31,8 @@ sensor:
     address: 0x40
     shunt_resistance: 0.010 ohm
     max_current: 10 A
-    adc_range: 0
+    adc_time: 4120 us
+    adc_averaging: 128
     update_interval: 60s
     current:
       name: "INA2xx Current"
@@ -58,6 +59,8 @@ sensor:
     shunt_resistance: 0.001130 ohm
     max_current: 40 A
     adc_range: 0
+    adc_time: 4120 us
+    adc_averaging: 128
     temperature_coefficient: 50
     current:
       name: "INA2xx Current"
