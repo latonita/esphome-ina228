@@ -28,6 +28,7 @@ i2c:
 sensor:
   - platform: ina2xx_i2c
     id: my_change_sensor
+    model: INA228
     address: 0x40
     shunt_resistance: 0.010 ohm
     max_current: 10 A
@@ -55,6 +56,7 @@ spi:
     
 sensor:
   - platform: ina2xx_spi
+    model: INA229
     cs_pin: D3
     shunt_resistance: 0.001130 ohm
     max_current: 40 A
@@ -71,6 +73,8 @@ sensor:
 Configuration variables:
 ------------------------
 
+- **model** (**Required): The model of the INA2xx sensor. For I2C valid options are ``INA228``, ``INA237``, ``INA238``,
+  for SPI options are ``INA229`` and ``INA239``.
 - **shunt_resistance** (float): The value of the shunt resistor used for current calculation. No default value.
 - **max_current** (float): The maximum current you are expecting. Component will use it to 
   calibrate the sensor. No default value.

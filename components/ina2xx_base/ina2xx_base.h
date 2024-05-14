@@ -29,12 +29,12 @@ enum RegisterMap : uint8_t {
   REG_DEVICE_ID = 0x3F
 };
 
-enum AdcRange : uint8_t {
+enum AdcRange : uint16_t {
   ADC_RANGE_0 = 0,
   ADC_RANGE_1 = 1,
 };
 
-enum AdcTime : uint8_t {
+enum AdcTime : uint16_t {
   ADC_TIME_50US = 0,
   ADC_TIME_84US = 1,
   ADC_TIME_150US = 2,
@@ -45,7 +45,7 @@ enum AdcTime : uint8_t {
   ADC_TIME_4120US = 7,
 };
 
-enum AdcAvgSamples : uint8_t {
+enum AdcAvgSamples : uint16_t {
   ADC_AVG_SAMPLES_1 = 0,
   ADC_AVG_SAMPLES_4 = 1,
   ADC_AVG_SAMPLES_16 = 2,
@@ -59,12 +59,12 @@ enum AdcAvgSamples : uint8_t {
 union ConfigurationRegister {
   uint16_t raw_u16;
   struct {
-    uint8_t reserved_0_3 : 4;  // Reserved
-    AdcRange ADCRANGE : 1;     // Shunt measurement range 0: ±163.84 mV, 1: ±40.96 mV
-    bool TEMPCOMP : 1;         // Temperature compensation enable
-    uint8_t CONVDLY : 8;       // Sets the Delay for initial ADC conversion in steps of 2 ms.
-    bool RSTACC : 1;           // Reset counters
-    bool RST : 1;              // Full device reset
+    uint16_t reserved_0_3 : 4;  // Reserved
+    AdcRange ADCRANGE : 1;      // Shunt measurement range 0: ±163.84 mV, 1: ±40.96 mV
+    bool TEMPCOMP : 1;          // Temperature compensation enable
+    uint16_t CONVDLY : 8;       // Sets the Delay for initial ADC conversion in steps of 2 ms.
+    bool RSTACC : 1;            // Reset counters
+    bool RST : 1;               // Full device reset
   } __attribute__((packed));
 };
 
@@ -72,10 +72,10 @@ union AdcConfigurationRegister {
   uint16_t raw_u16;
   struct {
     AdcAvgSamples AVG : 3;
-    AdcTime VTCT : 3;
-    AdcTime VSHCT : 3;
-    AdcTime VBUSCT : 3;
-    uint8_t MODE : 4;
+    AdcTime VTCT : 3;    // Voltage conversion time
+    AdcTime VSHCT : 3;   // Shunt voltage conversion time
+    AdcTime VBUSCT : 3;  // Bus voltage conversion time
+    uint16_t MODE : 4;
   } __attribute__((packed));
 };
 
@@ -109,6 +109,8 @@ union DiagnosticRegister {
   } __attribute__((packed));
 };
 
+enum INAModel : uint8_t { INA_UNKNOWN = 0, INA_228, INA_229, INA_238, INA_239, INA_237 };
+
 class INA2XX : public PollingComponent {
  public:
   void setup() override;
@@ -117,28 +119,32 @@ class INA2XX : public PollingComponent {
   void loop() override;
   void dump_config() override;
 
-  void set_shunt_resistance_ohm(float shunt_resistance_ohm) { shunt_resistance_ohm_ = shunt_resistance_ohm; }
-  void set_max_current_a(float max_current_a) { max_current_a_ = max_current_a; }
-  void set_adc_range(uint8_t range) { adc_range_ = (range == 0) ? AdcRange::ADC_RANGE_0 : AdcRange::ADC_RANGE_1; }
-  void set_adc_time(AdcTime time) { adc_time_ = time; }
-  void set_adc_avg_samples(AdcAvgSamples samples) { adc_avg_samples_ = samples; }
-  void set_shunt_tempco(uint16_t coeff) { shunt_tempco_ppm_c_ = coeff; }
+  void set_shunt_resistance_ohm(float shunt_resistance_ohm) { this->shunt_resistance_ohm_ = shunt_resistance_ohm; }
+  void set_max_current_a(float max_current_a) { this->max_current_a_ = max_current_a; }
+  void set_adc_range(uint8_t range) { this->adc_range_ = (range == 0) ? AdcRange::ADC_RANGE_0 : AdcRange::ADC_RANGE_1; }
+  void set_adc_time_bus_voltage(AdcTime time) { this->adc_time_bus_voltage_ = time; }
+  void set_adc_time_shunt_voltage(AdcTime time) { this->adc_time_shunt_voltage_ = time; }
+  void set_adc_time_die_temperature(AdcTime time) { this->adc_time_die_temperature_ = time; }
+  void set_adc_avg_samples(AdcAvgSamples samples) { this->adc_avg_samples_ = samples; }
+  void set_shunt_tempco(uint16_t coeff) { this->shunt_tempco_ppm_c_ = coeff; }
 
-  void set_shunt_voltage_sensor(sensor::Sensor *sensor) { shunt_voltage_sensor_ = sensor; }
-  void set_bus_voltage_sensor(sensor::Sensor *sensor) { bus_voltage_sensor_ = sensor; }
-  void set_die_temperature_sensor(sensor::Sensor *sensor) { die_temperature_sensor_ = sensor; }
-  void set_current_sensor(sensor::Sensor *sensor) { current_sensor_ = sensor; }
-  void set_power_sensor(sensor::Sensor *sensor) { power_sensor_ = sensor; }
-  void set_energy_sensor_j(sensor::Sensor *sensor) { energy_sensor_j_ = sensor; }
-  void set_energy_sensor_wh(sensor::Sensor *sensor) { energy_sensor_wh_ = sensor; }
-  void set_charge_sensor_c(sensor::Sensor *sensor) { charge_sensor_c_ = sensor; }
-  void set_charge_sensor_ah(sensor::Sensor *sensor) { charge_sensor_ah_ = sensor; }
+  void set_shunt_voltage_sensor(sensor::Sensor *sensor) { this->shunt_voltage_sensor_ = sensor; }
+  void set_bus_voltage_sensor(sensor::Sensor *sensor) { this->bus_voltage_sensor_ = sensor; }
+  void set_die_temperature_sensor(sensor::Sensor *sensor) { this->die_temperature_sensor_ = sensor; }
+  void set_current_sensor(sensor::Sensor *sensor) { this->current_sensor_ = sensor; }
+  void set_power_sensor(sensor::Sensor *sensor) { this->power_sensor_ = sensor; }
+  void set_energy_sensor_j(sensor::Sensor *sensor) { this->energy_sensor_j_ = sensor; }
+  void set_energy_sensor_wh(sensor::Sensor *sensor) { this->energy_sensor_wh_ = sensor; }
+  void set_charge_sensor_c(sensor::Sensor *sensor) { this->charge_sensor_c_ = sensor; }
+  void set_charge_sensor_ah(sensor::Sensor *sensor) { this->charge_sensor_ah_ = sensor; }
+
+  void set_model(INAModel model) { this->ina_model_ = model; }
 
   bool reset_energy_counters();
 
  protected:
   bool reset_config_();
-  bool check_device_type_();
+  bool check_device_model_();
   bool configure_adc_();
 
   bool configure_shunt_();
@@ -161,7 +167,9 @@ class INA2XX : public PollingComponent {
   float shunt_resistance_ohm_;
   float max_current_a_;
   AdcRange adc_range_{AdcRange::ADC_RANGE_0};
-  AdcTime adc_time_{AdcTime::ADC_TIME_4120US};
+  AdcTime adc_time_bus_voltage_{AdcTime::ADC_TIME_4120US};
+  AdcTime adc_time_shunt_voltage_{AdcTime::ADC_TIME_4120US};
+  AdcTime adc_time_die_temperature_{AdcTime::ADC_TIME_4120US};
   AdcAvgSamples adc_avg_samples_{AdcAvgSamples::ADC_AVG_SAMPLES_128};
   uint16_t shunt_tempco_ppm_c_{0};
 
@@ -203,10 +211,14 @@ class INA2XX : public PollingComponent {
     DATA_COLLECTION_8,
   } state_{State::NOT_INITIALIZED};
 
+  bool full_loop_is_okay_{true};
+
   //
-  // Device type
+  // Device model
   //
-  enum class INAType : uint8_t { UNKNOWN = 0, INA_228_229, INA_238_239, INA_237 } ina_type_{INAType::UNKNOWN};
+  INAModel ina_model_{INAModel::INA_UNKNOWN};
+  uint16_t dev_id_{0};
+  bool device_mismatch_{false};
 
   //
   // Device specific parameters
