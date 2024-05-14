@@ -47,7 +47,7 @@ sensor:
 ```
 external_components:
   source: github://latonita/esphome-ina228
-  components: [ina2xx_base, ina2xx_i2c]
+  components: [ina2xx_base, ina2xx_spi]
 
 spi:
   clk_pin: D0
