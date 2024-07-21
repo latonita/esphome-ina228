@@ -4,8 +4,6 @@ INA2xx family of digital power monitors
 **This component had been merged into official EspHome codebase**
 Please refer to [INA2xx Component in EspHome](https://esphome.io/components/sensor/ina2xx.html) for details.
 
-**This is EspHome perliminary component, before [PR#6138](https://github.com/esphome/esphome/pull/6138) is merged in main branch**
-
 Supported devices
 -----------------
 The ``ina2xx`` sensor platform allows you to use family of Texas Instruments current and power 
